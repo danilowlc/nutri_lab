@@ -1,16 +1,22 @@
-from django.http import HttpResponse
+from datetime import datetime
+from django.http import HttpResponse, JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.contrib.messages import constants
-from .models import Pacientes
+from .models import Pacientes, DadosPaciente
+from django.views.decorators.csrf import csrf_exempt
 
 
 @login_required(login_url='/auth/logar/')
 def pacientes(request):
     if request.method == "GET":
-        return render(request, 'pacientes.html')
+        
+        pacientes = Pacientes.objects.filter(nutri=request.user)
+        return render(request, 'pacientes.html', {'pacientes': pacientes})
+    
     elif request.method == "POST":
+        
         nome = request.POST.get('nome')
         sexo = request.POST.get('sexo')
         idade = request.POST.get('idade')
@@ -46,3 +52,68 @@ def pacientes(request):
         except:
             messages.add_message(request, constants.ERROR, 'Erro interno do sistema')
             return redirect('/pacientes/')
+
+@login_required(login_url='/auth/logar/')
+def dados_paciente_listar(request):
+    if request.method == "GET":
+        pacientes = Pacientes.objects.filter(nutri=request.user)
+        return render(request, 'dados_paciente_listar.html', {'pacientes': pacientes})
+
+@login_required(login_url='/auth/logar/')
+def dados_paciente(request, id):
+    paciente = get_object_or_404(Pacientes, id=id)
+    if not paciente.nutri == request.user:
+        messages.add_message(request, constants.ERROR, 'Esse paciente não é seu')
+        return redirect('/dados_paciente/')
+        
+    if request.method == "GET":
+        dados_paciente = DadosPaciente.objects.filter(paciente=paciente)
+        return render(request, 'dados_paciente.html', {'paciente': paciente, 'dados_paciente': dados_paciente})
+    elif request.method == "POST":
+        peso = request.POST.get('peso')
+        altura = request.POST.get('altura')
+        gordura = request.POST.get('gordura')
+        musculo = request.POST.get('musculo')
+
+        hdl = request.POST.get('hdl')
+        ldl = request.POST.get('ldl')
+        colesterol_total = request.POST.get('ctotal')
+        triglicerídios = request.POST.get('triglicerídios')
+        
+        if (len(peso) == 0) or (len(altura) == 0) or (len(gordura) == 0) or (len(musculo) == 0) or (len(hdl) == 0) or (len(hdl) == 0) or (len(ldl) == 0) or (len(colesterol_total) == 0) or (len(triglicerídios) == 0):
+            messages.add_message(request, constants.ERROR, 'Preencha todos os campos')
+            return redirect('/dados_paciente/')
+        
+        if not peso.isnumeric() or not altura.isnumeric() or not gordura.isnumeric() or not musculo.isnumeric() or not hdl.isnumeric() or not ldl.isnumeric() or not colesterol_total.isnumeric() or not triglicerídios.isnumeric():
+            messages.add_message(request, constants.ERROR, 'Digite um número válido')
+            return redirect('/dados_paciente/')
+        
+        paciente = DadosPaciente(paciente=paciente,
+                        data=datetime.now(),
+                        peso=peso,
+                        altura=altura,
+                        percentual_gordura=gordura,
+                        percentual_musculo=musculo,
+                        colesterol_hdl=hdl,
+                        colesterol_ldl=ldl,
+                        colesterol_total=colesterol_total,
+                        trigliceridios=triglicerídios)
+
+        paciente.save()
+
+        messages.add_message(request, constants.SUCCESS, 'Dados cadastrado com sucesso')
+
+        return redirect('/dados_paciente/')
+
+
+@login_required(login_url='/auth/logar/')
+@csrf_exempt
+def grafico_peso(request, id):
+    paciente = Pacientes.objects.get(id=id)
+    dados = DadosPaciente.objects.filter(paciente=paciente).order_by("data")
+    
+    pesos = [dado.peso for dado in dados]
+    labels = list(range(len(pesos)))
+    data = {'peso': pesos,
+            'labels': labels}
+    return JsonResponse(data)
